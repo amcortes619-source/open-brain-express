@@ -17,6 +17,8 @@ webhook.sql
 node_modules/
 .vercel/
 .supabase/
+supabase/.temp/
 *.log
 .DS_Store
 Thumbs.db
+.vercel
