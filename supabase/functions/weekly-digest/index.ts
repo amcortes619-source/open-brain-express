@@ -16,6 +16,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { callLLM, corsHeaders, jsonResponse } from '../_shared/ai.ts'
+import { saveThoughtRow } from '../_shared/save-thought.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -125,20 +126,20 @@ Deno.serve(async (req) => {
       const from = new Date(since).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       const to = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
-      const { error: insertError } = await supabase.from('thoughts').insert({
-        user_id: userId,
-        content: `🗓️ Your week — ${from} to ${to}\n\n${summary}`,
-        source: 'digest',
-        category: 'digest',
-        metadata: {
-          period_start: since,
-          period_end: new Date().toISOString(),
-          thoughts_covered: thoughts.length,
-        },
-      })
-
-      if (insertError) {
-        console.error(`[digest] ${userId}: could not save:`, insertError.message)
+      try {
+        await saveThoughtRow(supabase, {
+          user_id: userId,
+          content: `🗓️ Your week — ${from} to ${to}\n\n${summary}`,
+          source: 'digest',
+          category: 'digest',
+          metadata: {
+            period_start: since,
+            period_end: new Date().toISOString(),
+            thoughts_covered: thoughts.length,
+          },
+        })
+      } catch (err: any) {
+        console.error(`[digest] ${userId}: could not save:`, String(err))
         results.push({ user: userId, status: 'save failed', count: thoughts.length })
         continue
       }

@@ -103,6 +103,45 @@ to actually build — Step 5 below — tell them clearly:
 Do not attempt to talk them through the build by hand in a browser. It is long
 and it will not go well.
 
+=== STEP 0 — CHECK FOR AN EXISTING BRAIN FIRST ===
+
+Before creating anything, ask: "Have you ever built one of these before — at
+any point, even if you didn't finish, even a different version of it?" If
+they say no or aren't sure, move on to Step 1.
+
+If they say yes, or seem unsure but mention a Supabase project they made
+before: ask for that project's URL and public key, and check whether it
+already has a populated thoughts table:
+
+  curl -s "https://THEIR-PROJECT.supabase.co/rest/v1/thoughts?select=id&limit=1" \
+    -H "apikey: THEIR_KEY" -H "Authorization: Bearer THEIR_KEY"
+
+IF THIS RETURNS ROWS — they already have a brain with real thoughts in it.
+Tell them, plainly, in their language, filling in the real number you found —
+this exact shape, do not skip either half of it:
+
+  "You already have a brain with 340 thoughts in it.
+   If you want to bring that brain up to date, you want the upgrade page
+   instead: UPGRADE.md (or ACTUALIZAR.md in Spanish)
+   If you want to build a SECOND open-brain from scratch, you are in the
+   right place — keep going."
+
+Then WAIT for them to choose. Do not pick for them and do not skip this
+check because it seems obvious which one they want — some people genuinely
+want a second, separate brain (a work one and a personal one, for instance),
+and that is a completely valid choice. The point is that it becomes a choice
+they made on purpose, not something that happened to them by accident.
+
+If they choose to continue here anyway, make the consequence explicit before
+you proceed: "Just to be clear — continuing here builds a brand new, empty,
+separate brain. Your existing one is not touched, upgraded, or connected to
+this one in any way." Then continue to Step 1 normally.
+
+IF THE CHECK ABOVE FAILS OR RETURNS NOTHING — they don't actually have an
+existing populated brain (a failed sign-up, an empty test project, or they
+misremembered). Say so gently and continue to Step 1 as normal; there is
+nothing to redirect them to.
+
 === STEP 1 — WHAT IS ALREADY INSTALLED ===
 
 Find out whether they have these. Either run the commands yourself, or have them

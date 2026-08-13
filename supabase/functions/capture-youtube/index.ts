@@ -28,6 +28,9 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { callLLM, corsHeaders, jsonResponse } from '../_shared/ai.ts'
+import { decodeEntities } from '../_shared/text.ts'
+import { saveThoughtRow } from '../_shared/save-thought.ts'
+import { saveThoughtSourceSafe } from '../_shared/thought-sources.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -53,13 +56,6 @@ function extractVideoId(url: string): string | null {
     if (m) return m[1]
   }
   return null
-}
-
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
 }
 
 // ---------------------------------------------------------------------------
@@ -319,7 +315,7 @@ Deno.serve(async (req) => {
     // Save it. The enrich-thought webhook will pick this up within seconds and
     // add tags, a category, the meaning fingerprint, and graph links.
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
-    const { error: insertError } = await admin.from('thoughts').insert({
+    const saved = await saveThoughtRow(admin, {
       user_id: user.id,
       content: summary,
       source: 'youtube',
@@ -332,13 +328,25 @@ Deno.serve(async (req) => {
       },
     })
 
-    if (insertError) throw insertError
+    // Keep the full transcript (or description) too, chunked separately, so a detail the
+    // summary dropped is still searchable. Labelled by kind so it is clear later which one
+    // a given source came from.
+    const src = await saveThoughtSourceSafe(
+      admin,
+      saved.id,
+      result.content,
+      result.hasTranscript ? 'youtube_transcript' : 'youtube_description',
+      'capture-youtube',
+      user.id,
+    )
 
     return jsonResponse({
       ok: true,
       title,
       has_transcript: result.hasTranscript,
       fetched_via: result.source,
+      deduped: saved.deduped,
+      source_chunks: src.chunks,
       preview: summary.slice(0, 240) + '…',
     })
 

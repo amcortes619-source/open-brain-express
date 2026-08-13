@@ -16,71 +16,15 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { callLLM, corsHeaders, jsonResponse } from '../_shared/ai.ts'
+import { saveThoughtRow } from '../_shared/save-thought.ts'
+import { saveThoughtSourceSafe } from '../_shared/thought-sources.ts'
+import { htmlToText } from '../_shared/html-extract.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 
 const MAX_BYTES = 3_000_000   // don't try to swallow a 50MB page
-
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
-}
-
-// ---------------------------------------------------------------------------
-// Turn a page of HTML into readable text.
-//
-// Deliberately simple — no external library. Strip the machinery (scripts,
-// styles, navigation, footers), then remove the remaining tags. Not perfect on
-// every site, but it handles articles and blog posts well, and the AI summary
-// afterwards smooths over any leftover noise.
-// ---------------------------------------------------------------------------
-function htmlToText(html: string): { title: string; text: string } {
-  // Title first, before we destroy the markup
-  const titleMatch =
-    html.match(/<meta\s+property="og:title"\s+content="([^"]*)"/i) ??
-    html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
-  const title = titleMatch ? decodeEntities(titleMatch[1]).trim() : 'Untitled page'
-
-  // If the page marks up its article properly, use just that part
-  const articleMatch =
-    html.match(/<article[^>]*>([\s\S]*?)<\/article>/i) ??
-    html.match(/<main[^>]*>([\s\S]*?)<\/main>/i)
-  let body = articleMatch ? articleMatch[1] : html
-
-  const text = body
-    // Remove entire elements that never contain article content
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
-    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
-    .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
-    .replace(/<header[\s\S]*?<\/header>/gi, ' ')
-    .replace(/<footer[\s\S]*?<\/footer>/gi, ' ')
-    .replace(/<aside[\s\S]*?<\/aside>/gi, ' ')
-    .replace(/<form[\s\S]*?<\/form>/gi, ' ')
-    // Keep paragraph and heading breaks as newlines so structure survives
-    .replace(/<\/(p|div|h[1-6]|li|tr|blockquote)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    // Everything else goes
-    .replace(/<[^>]+>/g, ' ')
-
-  const cleaned = decodeEntities(text)
-    .replace(/[ \t ]+/g, ' ')
-    .replace(/\n\s*\n\s*\n+/g, '\n\n')
-    .split('\n')
-    .map(l => l.trim())
-    .filter(Boolean)
-    .join('\n')
-    .trim()
-
-  return { title, text: cleaned }
-}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -178,19 +122,24 @@ Deno.serve(async (req) => {
       : `🔗 ${title}\n${parsed.hostname}\n\n${text.slice(0, 4000)}`
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
-    const { error: insertError } = await admin.from('thoughts').insert({
+    const saved = await saveThoughtRow(admin, {
       user_id: user.id,
       content,
       source: 'url',
       metadata: { title, url: parsed.toString(), hostname: parsed.hostname },
     })
-    if (insertError) throw insertError
+
+    // The AI summary only ever saw the first 14,000 characters. Keep the full extracted article
+    // text too, chunked separately, so a detail past that point is still searchable.
+    const src = await saveThoughtSourceSafe(admin, saved.id, text, 'web', 'capture-url', user.id)
 
     return jsonResponse({
       ok: true,
       title,
       hostname: parsed.hostname,
       summarised: Boolean(summary),
+      deduped: saved.deduped,
+      source_chunks: src.chunks,
       preview: content.slice(0, 240) + '…',
     })
 

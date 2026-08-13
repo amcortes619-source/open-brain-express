@@ -44,39 +44,23 @@ Deno.serve(async (req) => {
     const count = Math.min(Number(limit) || 20, 50)
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
-    // --- meaning-based search ---------------------------------------------
+    // Meaning and exact-word matching in one call, fused by rank (see
+    // migration.sql section 8). If the embedding call fails — the AI key is
+    // missing, or OpenRouter is briefly down — query_embedding is null and
+    // the function gracefully runs keyword-only instead of returning nothing.
     const embedding = await generateEmbedding(q, { userId: user.id, source: 'search-brain' })
-    let results: unknown[] = []
-    let mode = 'keyword'
 
-    if (embedding) {
-      const { data, error } = await admin.rpc('search_thoughts_semantic', {
-        p_user_id: user.id,
-        query_embedding: embedding,
-        match_threshold: 0.3,
-        match_count: count,
-      })
-      if (error) {
-        console.error('[search] semantic failed:', error.message)
-      } else if (data?.length) {
-        results = data
-        mode = 'semantic'
-      }
-    }
+    const { data, error } = await admin.rpc('search_thoughts_hybrid', {
+      p_user_id: user.id,
+      query_text: q,
+      query_embedding: embedding,
+      match_threshold: 0.3,
+      match_count: count,
+    })
+    if (error) return jsonResponse({ ok: false, error: error.message }, 500)
 
-    // --- fallback ----------------------------------------------------------
-    // Runs when there is no embedding, or when meaning-search found nothing.
-    // A brand-new thought has no fingerprint for a few seconds, so this also
-    // covers "I just saved it and now I can't find it".
-    if (results.length === 0) {
-      const { data, error } = await admin.rpc('search_thoughts_keyword', {
-        p_user_id: user.id,
-        query_text: q,
-        match_count: count,
-      })
-      if (error) return jsonResponse({ ok: false, error: error.message }, 500)
-      results = data ?? []
-    }
+    const results = data ?? []
+    const mode = embedding ? 'hybrid' : 'keyword'
 
     return jsonResponse({ ok: true, mode, count: results.length, results })
 

@@ -69,8 +69,9 @@ meant to be edited.
 === WHAT YOU ARE BUILDING ===
 
 A personal knowledge base:
-- A Supabase database with login protection, semantic search, and a graph that
-  links related thoughts automatically
+- A Supabase database with login protection, hybrid search (meaning AND exact
+  words, fused together), long captures split into searchable chunks, and a
+  graph that links related thoughts automatically
 - A web app deployed to Vercel for capturing text, voice, YouTube, PDFs and web
   pages
 - Five edge functions doing the AI work
@@ -191,7 +192,7 @@ Easiest reliable route: tell them to open their Supabase dashboard -> SQL Editor
 
 Verify it worked by asking them to run this in the same SQL editor:
   select table_name from information_schema.tables where table_schema='public';
-They should see `thoughts` and `thought_links`.
+They should see `thoughts`, `thought_links`, `thought_sources` and `thought_chunks`.
 
 === STEP 4 — LINK THE PROJECT AND STORE SECRETS ===
 

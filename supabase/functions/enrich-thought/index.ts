@@ -4,12 +4,14 @@
 // This runs automatically a few seconds after any thought is saved, no matter
 // where it came from — the web app, Telegram, a YouTube capture, anything.
 //
-// It does three jobs in order:
+// It does four jobs in order:
 //   1. Asks the AI for tags, a category, and a one-line summary
 //   2. Generates the "meaning fingerprint" (embedding) used by smart search
-//   3. Finds the thoughts most similar in meaning and links them together
+//   3. Splits long content into overlapping chunks, each with its own
+//      fingerprint, so a detail buried in the middle is still findable
+//   4. Finds the thoughts most similar in meaning and links them together
 //
-// That third step is what builds the graph. Over time your brain grows a web
+// That last step is what builds the graph. Over time your brain grows a web
 // of connections without you ever managing it.
 //
 // DESIGN RULE: this function must never crash and must always return 200.
@@ -21,6 +23,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { callLLMForJSON, generateEmbedding, corsHeaders, jsonResponse } from '../_shared/ai.ts'
+import { saveThoughtChunksSafe } from '../_shared/thought-chunks.ts'
 
 // These two are provided automatically by Supabase inside every edge function.
 // You do NOT create them yourself — Supabase reserves the SUPABASE_ prefix and
@@ -152,6 +155,14 @@ Deno.serve(async (req) => {
     }
 
     // ---------------------------------------------------------------------
+    // STEP 2.5 — chunk the content, for thoughts long enough that one vector
+    // over the whole thing would bury a detail buried mid-document. Short
+    // thoughts (most voice notes, most Telegram messages) are under the
+    // chunker's minimum and this is a no-op for them.
+    // ---------------------------------------------------------------------
+    const chunksWritten = await saveThoughtChunksSafe(supabase, thoughtId, content, 'enrich-thought', 'summary', userId)
+
+    // ---------------------------------------------------------------------
     // STEP 3 — build the graph
     // ---------------------------------------------------------------------
     let linksCreated = 0
@@ -199,7 +210,7 @@ Deno.serve(async (req) => {
     console.log(
       `[enrich] ${thoughtId}: done — ${tags.length} tags, ` +
       `category=${category ?? 'none'}, embedding=${embedding ? 'yes' : 'no'}, ` +
-      `links=${linksCreated}`
+      `chunks=${chunksWritten}, links=${linksCreated}`
     )
 
     return jsonResponse({
@@ -209,6 +220,7 @@ Deno.serve(async (req) => {
       category,
       summary,
       embedded: Boolean(embedding),
+      chunks_created: chunksWritten,
       links_created: linksCreated,
     })
 

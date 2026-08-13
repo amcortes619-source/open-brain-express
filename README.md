@@ -8,6 +8,13 @@ point Claude at it and it can search everything you have ever saved.
 *Una base de conocimiento personal que te pertenece. Todo el proceso está
 disponible en español.*
 
+**Not sure where to start?** → **[WELCOME.md](WELCOME.md)** asks one
+question and sends you to the right page — new brain or existing one, in
+either language.
+*¿No sabes por dónde empezar?* → **[WELCOME.md](WELCOME.md#bienvenido)**
+*hace una pregunta y te manda a la página correcta — cerebro nuevo o
+existente, en cualquiera de los dos idiomas.*
+
 ---
 
 **New here? Two minutes of context first:**
@@ -22,6 +29,22 @@ installed before you begin.**
 
 *Hay un solo prompt. Cópialo, pégalo en Claude, presiona Enter. Te pregunta tu
 idioma antes que nada. No necesitas tener nada instalado para empezar.*
+
+---
+
+### Already have a brain? · ¿Ya tienes un cerebro?
+
+Built one before — the seven-level course, the bare-bones starter repo, or an
+earlier version of this Express repo? Don't start over. There's a page for
+bringing an existing brain up to date without losing anything in it, and it
+says plainly what upgrading actually gets you:
+
+# → **[UPGRADE / ACTUALIZAR](UPGRADE.md)** ←
+
+*¿Construiste uno antes — con el curso de siete niveles, el repositorio
+inicial, o una versión anterior de este repositorio Express? No empieces de
+cero. Hay una página para poner al día un cerebro existente sin perder nada
+de lo que ya tienes, y ahí te dice claramente qué consigues al actualizar.*
 
 ---
 
@@ -47,8 +70,13 @@ and come back another day — what you built stays built.
 
 - A **web app** at your own URL, installable on your phone
 - A **database you own** — export it any time, take it anywhere
-- **Search by meaning.** Ask for "how do I get new clients" and find the note
-  you wrote about customer acquisition, in different words
+- **Search by meaning AND by exact word, fused together.** Ask for "how do I
+  get new clients" and find the note you wrote about customer acquisition, in
+  different words — but an exact name, account number or unusual term still
+  finds its match too, which meaning alone is unreliable at
+- **The full text is kept, not just the summary.** An article or video gets
+  summarised for readability, but the whole thing stays underneath, split into
+  overlapping sections, so a detail the summary left out is still searchable
 - **A graph that builds itself.** Every new thought finds related older ones and
   links to them. Things you forgot resurface on their own
 - **Claude reading your brain** in any conversation, through MCP
@@ -90,17 +118,25 @@ because it was never anywhere but your own database.
 ## What's in here
 
 ```
-migration.sql              The database: tables, login protection, search, graph
+migration.sql              The database: tables, login protection, hybrid
+                            search, chunking, the graph — one file, safe to
+                            re-run any time
 index.html                 The app
 config.js                  Your Supabase details (filled in during Session 2)
 manifest.json, sw.js       Makes it installable on a phone
 
 supabase/functions/
   _shared/ai.ts            Every AI call. Change models here and nowhere else.
-  enrich-thought           Tags, embeds and links each thought automatically
+  _shared/text.ts          Turns HTML entities (&rsquo; &ntilde; etc) into real characters
+  _shared/chunking.ts      Splits long text into overlapping, retrievable sections
+  _shared/thought-chunks.ts    Embeds and stores those sections
+  _shared/thought-sources.ts   Keeps the full article/transcript, not just the summary
+  _shared/save-thought.ts  The one place a thought gets written — saving the
+                            same thing twice updates it instead of duplicating it
+  enrich-thought           Tags, embeds, chunks and links each thought automatically
   capture-youtube          Fetches real transcripts, four different ways
   capture-url              Reads any web page server-side
-  search-brain             Meaning-based search
+  search-brain             Meaning + exact-word search, fused into one ranking
   open-brain-mcp           What Claude Desktop talks to
   weekly-digest            Sunday morning report, run by a schedule in your database
   telegram-bot             Text your brain from your phone (optional)

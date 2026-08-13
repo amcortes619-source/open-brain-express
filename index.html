@@ -248,6 +248,8 @@ const T = {
     count:n=>`${n} thought${n===1?'':'s'} in your brain`,
     byMeaning:n=>`${n} result${n===1?'':'s'} — matched by meaning`,
     byKeyword:n=>`${n} result${n===1?'':'s'} — matched by keyword`,
+    sourceExcerptBadge:'from full source text',
+    summaryExcerptBadge:'excerpt',
     needBoth:'Enter an email and a password.',
     shortPw:'Password must be at least 6 characters.',
     accountMade:'Account created. Signing you in…',
@@ -300,6 +302,8 @@ const T = {
     count:n=>`${n} pensamiento${n===1?'':'s'} en tu cerebro`,
     byMeaning:n=>`${n} resultado${n===1?'':'s'} — encontrados por significado`,
     byKeyword:n=>`${n} resultado${n===1?'':'s'} — encontrados por palabra`,
+    sourceExcerptBadge:'del texto completo',
+    summaryExcerptBadge:'extracto',
     needBoth:'Escribe un correo y una contraseña.',
     shortPw:'La contraseña necesita al menos 6 caracteres.',
     accountMade:'Cuenta creada. Entrando…',
@@ -488,7 +492,11 @@ document.querySelectorAll('nav button').forEach(b => {
 // SAVING
 // ===========================================================================
 async function save(content, source, metadata={}){
-  const { error } = await sb.from('thoughts').insert({ user_id:user.id, content, source, metadata });
+  // upsert, not insert: migration.sql puts a unique index on (dedup_key, user_id), auto-derived
+  // from content by a database trigger. Saving the same text twice — a double-tap, a page
+  // refresh that resubmits — collapses onto the existing row instead of creating a duplicate.
+  const { error } = await sb.from('thoughts')
+    .upsert({ user_id:user.id, content, source, metadata }, { onConflict:'dedup_key,user_id' });
   return error;
 }
 
@@ -657,7 +665,7 @@ async function runSearch(){
     $('searchOut').innerHTML = `<div class="empty">${escapeHtml(t.noMatch(q))}</div>`;
     return;
   }
-  const label = r.mode === 'semantic' ? t.byMeaning(r.count) : t.byKeyword(r.count);
+  const label = r.mode === 'hybrid' ? t.byMeaning(r.count) : t.byKeyword(r.count);
   $('searchOut').innerHTML = `<div class="count">${label}</div>` + r.results.map(render).join('');
 }
 
@@ -692,8 +700,20 @@ function render(x){
   const badges = [];
   if (x.source && x.source !== 'text') badges.push(`<span class="badge">${escapeHtml(x.source)}</span>`);
   if (x.category) badges.push(`<span class="badge">${escapeHtml(x.category)}</span>`);
-  if (typeof x.similarity === 'number')
+  // 0 means "matched by keyword only, no meaning-fingerprint score" — not "0% relevant".
+  if (typeof x.similarity === 'number' && x.similarity > 0)
     badges.push(`<span class="badge sim">${Math.round(x.similarity*100)}%</span>`);
+  // match_source/chunk_origin are only present on search results, never on the Recent list.
+  // 'chunk' means the match came from a specific passage, not the thought's own whole-content
+  // vector. Which ORIGIN that passage came from matters more than the word "chunk" does: a
+  // 'summary' chunk is a fragment of the text already shown below, but a 'source' chunk is a
+  // passage from the full article/transcript that is NOT shown here — without this label, a hit
+  // whose match text is invisible looks unexplained.
+  if (x.match_source === 'chunk') {
+    badges.push(`<span class="badge">${escapeHtml(
+      x.chunk_origin === 'source' ? t.sourceExcerptBadge : t.summaryExcerptBadge
+    )}</span>`);
+  }
   const tags = x.tags?.length
     ? `<div class="tags">${x.tags.map(v => '#' + escapeHtml(v)).join(' ')}</div>` : '';
   return `<div class="thought">
