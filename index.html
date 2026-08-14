@@ -71,6 +71,7 @@
     color:#fff;font-size:34px;cursor:pointer;display:block;margin:6px auto 14px;
   }
   #mic.live{background:var(--bad);animation:pulse 1.4s infinite}
+  #mic:disabled{opacity:.4;cursor:not-allowed;animation:none}
   @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
 
   #drop{border:2px dashed var(--line);border-radius:13px;padding:34px 18px;
@@ -89,6 +90,7 @@
   .msg.ok{background:rgba(34,197,94,.11);border:1px solid rgba(34,197,94,.3);color:#86efac}
   .msg.err{background:rgba(239,68,68,.11);border:1px solid rgba(239,68,68,.3);color:#fca5a5}
   .msg.work{background:rgba(99,102,241,.11);border:1px solid rgba(99,102,241,.3);color:#a5b4fc}
+  .msg.warn{background:rgba(245,158,11,.11);border:1px solid rgba(245,158,11,.3);color:#fcd34d}
 
   .empty{text-align:center;color:var(--dim);padding:34px 16px;font-size:14px}
   .count{font-size:12px;color:var(--dim);margin-bottom:11px}
@@ -141,6 +143,7 @@
   <section class="panel" id="p-voice">
     <div class="card">
       <div class="hint" id="voiceHint"></div>
+      <div class="msg" id="voiceIOSWarn"></div>
       <button id="mic">🎙️</button>
       <textarea id="voiceText"></textarea>
       <button class="go" id="voiceSave"></button>
@@ -264,6 +267,7 @@ const T = {
     micBlocked:'Microphone access was blocked. Allow it in your browser settings and try again.',
     micErr:e=>`Microphone error: ${e}`,
     noSpeech:'This browser cannot do speech recognition. Chrome or Edge will work.',
+    iosVoiceWarning:'Voice doesn’t work in the installed app on iPhone — that’s an Apple restriction, not something broken here. Typing, YouTube, PDF, links and search all work normally. To use your voice, open this in Safari instead, or send a voice note to your Telegram bot.',
     notPdf:'That is not a PDF.',
     pdfReading:n=>`Reading ${n}…`, pdfPage:(p,n)=>`Reading page ${p} of ${n}…`,
     pdfScanned:'Almost no text found. This is probably a scanned PDF — an image of a page rather than real text. It would need OCR software first.',
@@ -318,6 +322,7 @@ const T = {
     micBlocked:'Se bloqueó el acceso al micrófono. Permítelo en la configuración de tu navegador e intenta de nuevo.',
     micErr:e=>`Error de micrófono: ${e}`,
     noSpeech:'Este navegador no puede reconocer voz. Chrome o Edge sí funcionan.',
+    iosVoiceWarning:'La voz no funciona en la aplicación instalada en iPhone — es una restricción de Apple, no algo roto aquí. Escribir, YouTube, PDF, ligas y búsqueda funcionan normal. Para usar tu voz, abre esto en Safari en su lugar, o mándale una nota de voz a tu bot de Telegram.',
     notPdf:'Eso no es un PDF.',
     pdfReading:n=>`Leyendo ${n}…`, pdfPage:(p,n)=>`Leyendo página ${p} de ${n}…`,
     pdfScanned:'Casi no se encontró texto. Probablemente es un PDF escaneado — una imagen de una página en lugar de texto real. Necesitaría pasar por un programa de OCR primero.',
@@ -365,6 +370,7 @@ function toggleLanguage(){
   lang = lang === 'es' ? 'en' : 'es';
   localStorage.setItem('ob_lang', lang);
   applyLanguage();
+  updateVoiceWarning();
   if (user) { loadRecent(); }
 }
 
@@ -520,10 +526,56 @@ $('writeText').addEventListener('keydown', e => {
 // ===========================================================================
 // VOICE
 // ===========================================================================
+// IOS-STANDALONE-DETECT:START
+// Apple blocks the Web Speech API for web apps installed to an iPhone home
+// screen — it works fine in the regular Safari tab, just not once the app is
+// an icon. Written as pure functions taking nav/win explicitly (instead of
+// reading the globals directly) so this exact logic can be extracted and
+// unit-tested outside a browser — see tests/ios-standalone.test.ts
+//
+// Both checks matter, not just one:
+//   navigator.standalone   — Safari's own long-standing signal. Some iOS
+//                             versions/flows do not set it even when running
+//                             standalone (notably iOS 26's new "Open as Web
+//                             App" path).
+//   display-mode: standalone — the standard, cross-browser signal, but is
+//                             not consistently set on every iOS release
+//                             either. Checking both catches more real cases
+//                             than either alone.
+function isIOSDevice(nav){
+  return /iPad|iPhone|iPod/.test(nav.userAgent || '') ||
+    (nav.platform === 'MacIntel' && (nav.maxTouchPoints || 0) > 1);
+}
+function isStandaloneDisplay(nav, win){
+  return nav.standalone === true ||
+    !!(win.matchMedia && win.matchMedia('(display-mode: standalone)').matches);
+}
+// IOS-STANDALONE-DETECT:END
+
+const iosVoiceBlocked = isIOSDevice(navigator) && isStandaloneDisplay(navigator, window);
+
+function updateVoiceWarning(){
+  const mic = $('mic');
+  if (iosVoiceBlocked){
+    say('voiceIOSWarn', t.iosVoiceWarning, 'warn');
+    mic.disabled = true;
+    mic.title = t.iosVoiceWarning;
+  } else {
+    clear('voiceIOSWarn');
+    mic.disabled = false;
+    mic.title = '';
+  }
+}
+updateVoiceWarning();
+
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false;
 
 $('mic').onclick = () => {
+  // Checked again here, not just via the disabled attribute above — belt and
+  // braces so a click can never fall through to rec.start() and fail with no
+  // explanation, which is the exact silent failure this exists to prevent.
+  if (iosVoiceBlocked) return say('voiceMsg', t.iosVoiceWarning, 'warn');
   if (!SR) return say('voiceMsg', t.noSpeech, 'err');
   if (listening){ rec.stop(); return; }
 

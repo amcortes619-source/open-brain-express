@@ -1,13 +1,20 @@
-# Sesión 2b — Mándale mensajes a tu cerebro (opcional)
+# Sesión 2b — Escríbele (o háblale) a tu cerebro (opcional)
 
 **Tiempo: 20 a 30 minutos. Sáltala si andas corto de tiempo — todo lo demás
 funciona sin esto.**
 
 Esto te da un bot de Telegram. Le mandas un mensaje desde tu celular y se guarda
-en tu cerebro. Le haces una pregunta y busca. Sin abrir una app, sin navegador,
-sin escribir una dirección — nada más un mensaje como cualquier otro.
+en tu cerebro. Le mandas una nota de voz y también la transcribe y la guarda. Le
+haces una pregunta y busca. Sin abrir una app, sin navegador, sin escribir una
+dirección — nada más un mensaje como cualquier otro.
 
 Es lo que la mayoría termina usando más.
+
+**Si tienes iPhone, esta sesión importa más de lo que suena "opcional."** La
+captura de voz en la aplicación instalada no funciona en iPhone — Apple la
+bloquea para todo lo que corre desde un ícono en la pantalla de inicio, y la
+aplicación misma ya te lo dice si lo intentas. Este bot es el reemplazo real:
+háblale aquí en su lugar.
 
 ---
 
@@ -105,6 +112,21 @@ Have them, on their phone:
   4. Send: /count
      Expect a total.
 
+  5. Hold the microphone in Telegram and record a short voice note in
+     Spanish — have them say something real.
+     Expect a reply within a few seconds echoing back the transcribed text,
+     starting with "✅ Guardado desde voz:"
+
+     Explain in Spanish: voice transcription uses the SAME OpenRouter key
+     from Session 2, Step 1 — nothing new to add. If the reply instead asks
+     for "una llave más" (one more key), OPENROUTER_API_KEY did not make it
+     into this project's Supabase secrets; check Session 2 Step 4 was
+     actually completed, then redeploy this function.
+
+     If a voice note comes back saying the transcription failed, that is a
+     transcription-service hiccup, not a setup problem — have them try
+     again. Text capture is unaffected either way. Explain this in Spanish.
+
 If nothing at all comes back, the webhook is the usual culprit. Check it with:
 
   https://api.telegram.org/bot<THEIR_BOT_TOKEN>/getWebhookInfo
@@ -116,9 +138,15 @@ wrong. A 401 there means the function was deployed without --no-verify-jwt.
 
 Explain in Spanish:
   - Manda cualquier cosa -> se guarda
+  - Manda una nota de voz -> se transcribe y se guarda, y te responde con el
+    texto para que una transcripción mal hecha se note de inmediato
   - ? seguido de una pregunta -> busca por significado
   - /recent -> las últimas 5 cosas
   - /count -> cuánto hay adentro
+
+Point out to an iPhone user specifically, in Spanish: this is now their voice
+path. The installed app on their phone cannot do voice capture at all (an
+Apple restriction) — the app tells them so and points here.
 
 Suggest they pin the bot to the top of their Telegram list.
 ```
@@ -127,12 +155,17 @@ Suggest they pin the bot to the top of their Telegram list.
 
 ## Lo que ya tienes
 
-Tu cerebro en el bolsillo. Ideas en el coche, en una junta, caminando — se las
-mandas al bot y quedan capturadas, etiquetadas y conectadas con todo lo demás
-que sabes, antes de que guardes el teléfono.
+Tu cerebro en el bolsillo. Ideas en el coche, en una junta, caminando — las
+dices o las escribes al bot y quedan capturadas, etiquetadas y conectadas con
+todo lo demás que sabes, antes de que guardes el teléfono.
 
 Todo lo que mandes por aquí aparece en tu aplicación web y Claude lo puede leer,
 igual que cualquier otra cosa. Es un solo cerebro con varias puertas.
+
+Si tienes iPhone, esto también arregla un hueco real: la captura de voz en la
+aplicación instalada no funciona ahí — Apple la bloquea para todo lo que corre
+desde un ícono en la pantalla de inicio. Hablarle a este bot no es un
+sustituto para eso — es la forma pensada para capturar por voz en iPhone.
 
 ---
 

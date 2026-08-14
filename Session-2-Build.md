@@ -483,10 +483,22 @@ the installed app do not share a login. That is expected, not a failure.
 One gap worth being straight about: voice capture works everywhere except the
 installed app on iPhone. Apple currently blocks microphone-to-text for
 anything running standalone from an iPhone home screen — it works fine in the
-Safari tab itself, just not once it is an icon. If they are on iPhone and want
-to capture by voice, tell them to do it from Safari directly; everything else —
+Safari tab itself, just not once it is an icon. Everything else — typing,
 YouTube, PDF, URL, search — works the same installed or not. Android has no
 such limit; voice works installed or not.
+
+The app itself now knows this and says so: an iPhone user who opens the Voice
+tab in the installed app sees this explained right there, with the mic button
+disabled rather than silently doing nothing. So do not be surprised if they
+mention seeing a message about it — that is the app working correctly, not a
+bug you need to chase down.
+
+For the actual voice path on iPhone, point them at Telegram (Session 2b) —
+send the bot a voice note and it transcribes and saves it, same as speaking
+into the app would. It is optional and about 20-30 minutes, but for an iPhone
+owner it is not really optional if voice matters to them; say that plainly.
+Safari also still works for voice if they would rather stay in the browser tab
+and skip Telegram.
 
 === STEP 11 — SAVE THEIR WORK BACK TO GITHUB ===
 
