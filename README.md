@@ -139,7 +139,7 @@ supabase/functions/
   search-brain             Meaning + exact-word search, fused into one ranking
   open-brain-mcp           What Claude Desktop talks to
   weekly-digest            Sunday morning report, run by a schedule in your database
-  telegram-bot             Text your brain from your phone (optional)
+  telegram-bot             Text or send a voice note from your phone (optional)
 ```
 
 ---

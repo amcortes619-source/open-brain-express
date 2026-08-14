@@ -30,8 +30,16 @@ const CHAT_MODEL = Deno.env.get('LLM_MODEL') ?? 'anthropic/claude-haiku-4.5'
 const EMBEDDING_MODEL = Deno.env.get('EMBEDDING_MODEL') ?? 'openai/text-embedding-3-small'
 const EMBEDDING_DIMENSIONS = 1536
 
+// TRANSCRIPTION_MODEL turns spoken audio into text (voice notes from Telegram).
+// Whisper-class models are priced per second of audio and auto-detect the
+// spoken language, which matters here — do not swap in a model that requires
+// a language to be named up front, or Spanish audio silently gets treated as
+// English-ish noise.
+const TRANSCRIPTION_MODEL = Deno.env.get('TRANSCRIPTION_MODEL') ?? 'openai/whisper-1'
+
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const OPENROUTER_EMBED_URL = 'https://openrouter.ai/api/v1/embeddings'
+const OPENROUTER_TRANSCRIBE_URL = 'https://openrouter.ai/api/v1/audio/transcriptions'
 
 
 // ---------------------------------------------------------------------------
@@ -65,7 +73,7 @@ export function jsonResponse(body: unknown, status = 200): Response {
 // ---------------------------------------------------------------------------
 function logUsage(entry: {
   userId?: string
-  kind: 'chat' | 'embedding'
+  kind: 'chat' | 'embedding' | 'transcription'
   model: string
   source?: string
   promptTokens?: number
@@ -308,5 +316,111 @@ export async function generateEmbedding(
   } catch (err) {
     console.error('[ai] Embedding call failed:', String(err))
     return null
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// toBase64 — Uint8Array -> base64 string.
+//
+// btoa() only accepts a "binary string", and spreading a large Uint8Array
+// straight into String.fromCharCode(...bytes) blows the call stack on
+// anything past a few tens of thousands of bytes — a voice note is easily
+// past that. Chunking keeps every call to String.fromCharCode small.
+// ---------------------------------------------------------------------------
+function toBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+  return btoa(binary)
+}
+
+
+// ---------------------------------------------------------------------------
+// transcribeAudio — turn spoken audio into text.
+//
+// Goes through OpenRouter's /audio/transcriptions endpoint, behind the same
+// OPENROUTER_API_KEY every other call in this file already uses. That is a
+// deliberate choice, not the only option: OpenRouter added transcription
+// (Whisper and newer models) in 2026 behind the same credentials used for
+// chat and embeddings, and OPENROUTER_API_KEY is a REQUIRED key collected in
+// Session 2 Step 1 — before Telegram (Session 2b) is ever set up. So this
+// needs no new account for almost everyone. The 'no-key' result below exists
+// anyway, for the same reason callLLM and generateEmbedding above check
+// OPENROUTER_KEY rather than assume it: defense for the rare setup where it
+// really is missing, not the expected path.
+//
+// `language` is deliberately left unset on every call — omitting it makes
+// Whisper auto-detect the spoken language instead of assuming English, which
+// matters because a large share of Express's intended users speak Spanish.
+//
+// Returns a tagged result rather than throwing, mirroring callLLM's
+// never-fail-the-caller philosophy, but with enough detail (`reason`) for a
+// caller like telegram-bot to say something specific back to the user
+// instead of a generic failure.
+// ---------------------------------------------------------------------------
+export type TranscribeResult =
+  | { ok: true; text: string }
+  | { ok: false; reason: 'no-key' | 'http' | 'network' }
+
+export async function transcribeAudio(opts: {
+  audioBytes: Uint8Array
+  /** Container/extension Whisper expects — e.g. 'ogg' for Telegram's Ogg/Opus voice notes. */
+  format: string
+  userId?: string
+  source?: string
+}): Promise<TranscribeResult> {
+  if (!OPENROUTER_KEY) {
+    console.error('[ai] OPENROUTER_API_KEY is not set — skipping transcription')
+    return { ok: false, reason: 'no-key' }
+  }
+
+  try {
+    const res = await fetch(OPENROUTER_TRANSCRIBE_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: TRANSCRIPTION_MODEL,
+        input_audio: { data: toBase64(opts.audioBytes), format: opts.format },
+      }),
+      // OpenRouter's own upstream transcription providers time out around 60s;
+      // give up slightly before that so this returns a clean 'network' result
+      // instead of the caller's own timeout firing first with no explanation.
+      signal: AbortSignal.timeout(55_000),
+    })
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '')
+      console.error(`[ai] Transcription HTTP ${res.status}: ${errText.slice(0, 300)}`)
+      return { ok: false, reason: 'http' }
+    }
+
+    const data = await res.json()
+    const text = data?.text
+
+    if (typeof text !== 'string') {
+      console.error('[ai] Transcription returned no usable text')
+      return { ok: false, reason: 'http' }
+    }
+
+    logUsage({
+      userId: opts.userId,
+      kind: 'transcription',
+      model: TRANSCRIPTION_MODEL,
+      source: opts.source,
+      promptTokens: data?.usage?.input_tokens ?? 0,
+      completionTokens: data?.usage?.output_tokens ?? 0,
+      costUsd: Number(data?.usage?.cost ?? 0),
+    })
+
+    return { ok: true, text }
+  } catch (err) {
+    console.error('[ai] Transcription call failed:', String(err))
+    return { ok: false, reason: 'network' }
   }
 }
