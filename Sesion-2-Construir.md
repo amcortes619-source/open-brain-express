@@ -446,6 +446,67 @@ their actual brain, and it saves them repeating the exercise later.
 
    They should see weekly-brain-digest, '0 8 * * 0', active = true.
 
+=== STEP 10b — PUT IT IN YOUR POCKET ===
+
+Explain, in Spanish: "Voice capture is the reason to bother with any of
+this — speaking a thought on a walk beats typing one at a desk. That only
+works if the app is on your phone, not sitting in a browser tab you have to go
+find. Install it now."
+
+Use their live Vercel URL from Step 7 — the https:// one. Not localhost, not
+anything with an IP address in it. Localhost means "this computer," and a
+phone is never that computer, so it can never open it.
+
+IPHONE — must be Safari. The install option does not appear in Chrome or any
+other browser on iOS, even though they all use the same engine underneath.
+Give these steps in Spanish, keeping the on-screen button names in English
+with the Spanish name alongside on first mention:
+  1. Open the Vercel URL in Safari
+  2. Tap the Share button ("Compartir" — square with an arrow pointing up) in
+     the toolbar
+  3. Scroll down, tap "Add to Home Screen" ("Agregar a pantalla de inicio")
+  4. Tap "Add" ("Agregar") top right
+
+ANDROID — Chrome.
+  1. Open the Vercel URL in Chrome
+  2. Either wait for a banner offering to install, or tap the three-dot menu
+     top right and tap "Install app" ("Instalar app" — older Chrome may say
+     "Add to Home screen" / "Agregar a pantalla de inicio")
+  3. Confirm
+
+Ask, in Spanish: "Do you have an Open Brain icon on your home screen now?
+1 — Yes
+2 — No — I'll describe my phone and browser"
+
+If nothing ever offers to install, it is almost always the wrong browser.
+iPhone means Safari, Android means Chrome — Firefox, and in-app browsers like
+the one inside Instagram, will never offer it, and will not say why. Explain
+that in Spanish too.
+
+Have them open it from the home screen icon, not the browser. Ask, in
+Spanish: "Does it open full screen — no address bar, no browser buttons, like
+a real app?
+1 — Yes
+2 — Still looks like a browser tab"
+
+If 2: it saved as a bookmark, not an install. Send them back to redo it —
+Safari's Share menu option must say "Add to Home Screen" specifically, not
+"Add to Reading List" or "Add Bookmark." Chrome's menu must say "Install app,"
+not just open the page.
+
+They will be asked to log in again once it is installed — the browser tab and
+the installed app do not share a login. Tell them, in Spanish, that this is
+expected, not a failure.
+
+One gap worth being straight about, and worth explaining carefully in
+Spanish: voice capture works everywhere except the installed app on iPhone.
+Apple currently blocks microphone-to-text for anything running standalone
+from an iPhone home screen — it works fine in the Safari tab itself, just not
+once it is an icon. If they are on iPhone and want to capture by voice, tell
+them to do it from Safari directly; everything else — YouTube, PDF, URL,
+search — works the same installed or not. Android has no such limit; voice
+works installed or not.
+
 === STEP 11 — SAVE THEIR WORK BACK TO GITHUB ===
 
 Before pushing, verify nothing secret is about to be committed:
@@ -472,8 +533,7 @@ Tell them, in Spanish and in plain language:
 - The figure in the corner of the app is what the AI has actually cost them
   this month. Point it out — it is the honest answer to "what will this cost",
   and it means they never have to take anyone's word for it
-- They can install it on their phone: open the URL in the phone browser and
-  choose "Add to Home Screen" / "Agregar a pantalla de inicio"
+- It is already on their phone, from Step 10b
 - Everything they save gets tagged and connected automatically
 - Nobody else can read it — it is protected by their login
 - Session 3 connects it to Claude Desktop
