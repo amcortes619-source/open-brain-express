@@ -1,8 +1,9 @@
 // ============================================================================
 // TELEGRAM-BOT
 // ============================================================================
-// Text your brain from your phone. Send it a thought and it saves. Ask it a
-// question and it searches.
+// Text your brain from your phone. Send it a thought and it saves. Send it a
+// voice note and it transcribes and saves that too. Ask it a question and it
+// searches.
 //
 // ---------------------------------------------------------------------------
 // DEPLOY THIS ONE WITH:
@@ -21,7 +22,7 @@
 // ---------------------------------------------------------------------------
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { generateEmbedding, corsHeaders } from '../_shared/ai.ts'
+import { generateEmbedding, transcribeAudio, corsHeaders } from '../_shared/ai.ts'
 import { saveThoughtRow } from '../_shared/save-thought.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
@@ -29,6 +30,21 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? ''
 const OWNER_USER_ID = Deno.env.get('OWNER_USER_ID') ?? ''
 const ALLOWED_CHAT_ID = Deno.env.get('TELEGRAM_CHAT_ID') ?? ''
+
+// Bot API's current hard limit for downloading a file via getFile. Voice notes
+// are nowhere near this (Telegram's Ogg/Opus voice encoding runs roughly 1KB
+// per second of audio), but it is a cheap belt-and-braces check after download.
+const TELEGRAM_FILE_LIMIT_BYTES = 20 * 1024 * 1024
+
+// Not a hard platform limit — a judgment call. OpenRouter's own upstream
+// transcription providers time out around 60 seconds per request, and a long
+// voice note means a long base64 payload on top of a long transcription, so
+// this stays well clear of that ceiling rather than finding it the hard way.
+const MAX_VOICE_SECONDS = 300
+
+function ok(): Response {
+  return new Response('ok', { status: 200, headers: corsHeaders })
+}
 
 async function reply(chatId: number | string, text: string): Promise<void> {
   try {
@@ -63,23 +79,166 @@ function formatHit(
   return `${n}. [${when}${score}${via}]\n${body}${t.content.length > 400 ? '…' : ''}`
 }
 
-Deno.serve(async (req) => {
+// ---------------------------------------------------------------------------
+// pickLang — the bot is single-tenant (one owner, locked to one chat id), so
+// there is no stored language preference to consult. Telegram tells us the
+// owner's own app language on every message (message.from.language_code) —
+// good enough to pick between the two reply strings below without asking.
+// ---------------------------------------------------------------------------
+export function pickLang(message: any, en: string, es: string): string {
+  const code = String(message?.from?.language_code ?? '').toLowerCase()
+  return code.startsWith('es') ? es : en
+}
+
+// ---------------------------------------------------------------------------
+// audioFormatFromMime — message.audio (a file sent as "audio" rather than a
+// recorded "voice" note) can arrive in whatever format the sender's app used.
+// message.voice is always Ogg/Opus and is handled separately, hardcoded.
+// ---------------------------------------------------------------------------
+function audioFormatFromMime(mime?: string): string {
+  const m = (mime ?? '').toLowerCase()
+  if (m.includes('mp4') || m.includes('m4a')) return 'm4a'
+  if (m.includes('mpeg') || m.includes('mp3')) return 'mp3'
+  if (m.includes('wav')) return 'wav'
+  if (m.includes('flac')) return 'flac'
+  if (m.includes('webm')) return 'webm'
+  if (m.includes('ogg')) return 'ogg'
+  return 'mp3'   // reasonable default; transcription will fail cleanly if it guessed wrong
+}
+
+// ---------------------------------------------------------------------------
+// handleVoiceMessage — voice note or audio file in, transcribed thought out.
+//
+// Flow: duration gate -> getFile -> download from Telegram's file server ->
+// transcribe -> save -> reply with the transcript so a mangled transcription
+// is obvious immediately, not discovered later while searching the brain.
+//
+// IDEMPOTENCY: text messages dedupe on md5(content) — the same text always
+// hashes the same way, so a Telegram retry collapses onto the same row for
+// free (see _shared/save-thought.ts). Transcription does not have that
+// property: re-running the exact same audio through Whisper is not
+// guaranteed to produce byte-identical text on every call, so content-based
+// dedup could let a retried update slip through as a second, differently-
+// worded thought — silently duplicating, the exact failure save-thought.ts
+// exists to prevent. Voice notes dedupe on the stable thing instead: this
+// Telegram message's own id, supplied explicitly as dedup_key. The database
+// trigger only fills dedup_key in when it is null (see migration.sql), so an
+// explicit value here is respected, not overwritten.
+// ---------------------------------------------------------------------------
+export async function handleVoiceMessage(
+  supabase: any,
+  chatId: number | string,
+  media: { file_id: string; duration?: number; file_size?: number },
+  message: any,
+  opts: { format: string; source: string },
+): Promise<Response> {
+  if (typeof media.duration === 'number' && media.duration > MAX_VOICE_SECONDS) {
+    const minutes = Math.round(media.duration / 60)
+    const limitMinutes = MAX_VOICE_SECONDS / 60
+    await reply(chatId, pickLang(message,
+      `That voice note is about ${minutes} minute${minutes === 1 ? '' : 's'} — a bit long to transcribe reliably in one go. Keep it under ${limitMinutes} minutes, or split it into two.`,
+      `Esa nota de voz dura como ${minutes} minuto${minutes === 1 ? '' : 's'} — es mucho para transcribir de una vez de forma confiable. Mantenla bajo ${limitMinutes} minutos, o divídela en dos.`))
+    return ok()
+  }
+
+  let fileBytes: Uint8Array
+  try {
+    const fileRes = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(media.file_id)}`,
+      { signal: AbortSignal.timeout(10_000) }
+    )
+    const fileData = await fileRes.json()
+    const filePath = fileData?.result?.file_path
+    if (!fileData?.ok || !filePath) throw new Error(fileData?.description ?? 'getFile did not return a file_path')
+
+    const downloadRes = await fetch(
+      `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`,
+      { signal: AbortSignal.timeout(30_000) }
+    )
+    if (!downloadRes.ok) throw new Error(`file download HTTP ${downloadRes.status}`)
+
+    const buf = await downloadRes.arrayBuffer()
+    if (buf.byteLength > TELEGRAM_FILE_LIMIT_BYTES) throw new Error('downloaded file exceeds the size limit')
+    fileBytes = new Uint8Array(buf)
+  } catch (err) {
+    console.error('[telegram] Voice download failed:', String(err))
+    await reply(chatId, pickLang(message,
+      'Could not download that voice note from Telegram. Try sending it again.',
+      'No se pudo descargar esa nota de voz de Telegram. Intenta enviarla de nuevo.'))
+    return ok()
+  }
+
+  const result = await transcribeAudio({
+    audioBytes: fileBytes,
+    format: opts.format,
+    userId: OWNER_USER_ID,
+    source: 'telegram-bot',
+  })
+
+  if (!result.ok) {
+    const msg = result.reason === 'no-key'
+      ? pickLang(message,
+          'Voice notes need one more key: an OpenRouter key. You most likely already added one for the rest of the app back in Session 2, Step 1 — if OPENROUTER_API_KEY is set in Supabase, tell Claude Code to redeploy this function and it will pick it up. If you never added one, tell Claude Code: "set OPENROUTER_API_KEY" and it will walk you through it. Text still works normally either way.',
+          'Las notas de voz necesitan una llave más: una llave de OpenRouter. Seguramente ya agregaste una para el resto de la app en la Sesión 2, Paso 1 — si OPENROUTER_API_KEY ya está puesta en Supabase, dile a Claude Code que vuelva a desplegar esta función y la va a usar. Si nunca agregaste una, dile a Claude Code: "set OPENROUTER_API_KEY" y te guía. El texto sigue funcionando normal de cualquier forma.')
+      : pickLang(message,
+          'Could not transcribe that voice note. Text still works normally — try again in a minute, or just type it.',
+          'No se pudo transcribir esa nota de voz. El texto sigue funcionando normal — intenta de nuevo en un minuto, o escríbelo.')
+    await reply(chatId, msg)
+    return ok()
+  }
+
+  const transcript = result.text.trim()
+  if (!transcript) {
+    await reply(chatId, pickLang(message,
+      'That came back empty — might have been silence, or too quiet to make out. Nothing was saved.',
+      'Eso salió vacío — puede que fuera silencio, o que no se entendiera bien. No se guardó nada.'))
+    return ok()
+  }
+
+  try {
+    const saved = await saveThoughtRow(supabase, {
+      user_id: OWNER_USER_ID,
+      content: transcript,
+      source: opts.source,
+      // Explicit, not content-derived — see the idempotency note above.
+      dedup_key: `telegram-voice:${message.message_id}`,
+      metadata: {
+        from: message.from?.first_name ?? null,
+        duration_seconds: media.duration ?? null,
+      },
+    })
+
+    const preview = transcript.length > 500 ? transcript.slice(0, 500) + '…' : transcript
+    await reply(chatId, saved.deduped
+      ? pickLang(message,
+          `Already had that one saved — no new copy made.\n\n🎙️ "${preview}"`,
+          `Ya tenía esa nota guardada — no se hizo una copia nueva.\n\n🎙️ "${preview}"`)
+      : pickLang(message,
+          `✅ Saved from voice:\n\n🎙️ "${preview}"`,
+          `✅ Guardado desde voz:\n\n🎙️ "${preview}"`))
+  } catch (err: any) {
+    console.error('[telegram] Voice save failed:', String(err))
+    await reply(chatId, pickLang(message,
+      `Transcribed it, but could not save it: ${err?.message ?? String(err)}`,
+      `Se transcribió, pero no se pudo guardar: ${err?.message ?? String(err)}`))
+  }
+  return ok()
+}
+
+export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
   // ALWAYS return 200 to Telegram, whatever happens. A non-200 makes Telegram
   // retry the same message over and over for hours.
-  const ok = () => new Response('ok', { status: 200, headers: corsHeaders })
-
   try {
     const update = await req.json()
     const message = update?.message ?? update?.edited_message
     if (!message) return ok()
 
     const chatId = message.chat?.id
-    const text: string = (message.text ?? '').trim()
-    if (!chatId || !text) return ok()
+    if (!chatId) return ok()
 
     // --- who is this? -----------------------------------------------------
     if (!ALLOWED_CHAT_ID) {
@@ -104,11 +263,24 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
+    // --- voice note or audio file -----------------------------------------
+    if (message.voice) {
+      return await handleVoiceMessage(supabase, chatId, message.voice, message,
+        { format: 'ogg', source: 'telegram-voice' })
+    }
+    if (message.audio) {
+      return await handleVoiceMessage(supabase, chatId, message.audio, message,
+        { format: audioFormatFromMime(message.audio.mime_type), source: 'telegram-audio' })
+    }
+
+    const text: string = (message.text ?? '').trim()
+    if (!text) return ok()
+
     // --- /start, /help ----------------------------------------------------
     if (text === '/start' || text === '/help') {
       await reply(chatId,
         `🧠 Your Open Brain\n\n` +
-        `Just send me anything and I will save it.\n\n` +
+        `Just send me anything and I will save it. Voice notes work too.\n\n` +
         `? your question — search your brain\n` +
         `/recent — the last few things you saved\n` +
         `/count — how much is in there\n\n` +
@@ -204,4 +376,11 @@ Deno.serve(async (req) => {
     console.error('[telegram] Unexpected failure:', String(err))
     return ok()
   }
-})
+}
+
+// Guarded so importing this module for tests does not start a server —
+// import.meta.main is only true when this file is run directly, which is
+// exactly what deploying/serving it does.
+if (import.meta.main) {
+  Deno.serve(handleRequest)
+}

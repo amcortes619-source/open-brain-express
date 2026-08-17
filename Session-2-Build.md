@@ -435,6 +435,71 @@ while you can still fix them.
 
    They should see weekly-brain-digest, '0 8 * * 0', active = true.
 
+=== STEP 10b — PUT IT IN YOUR POCKET ===
+
+Explain: "Voice capture is the reason to bother with any of this — speaking a
+thought on a walk beats typing one at a desk. That only works if the app is on
+your phone, not sitting in a browser tab you have to go find. Install it now."
+
+Use their live Vercel URL from Step 7 — the https:// one. Not localhost, not
+anything with an IP address in it. Localhost means "this computer," and a phone
+is never that computer, so it can never open it.
+
+IPHONE — must be Safari. The install option does not appear in Chrome or any
+other browser on iOS, even though they all use the same engine underneath.
+  1. Open the Vercel URL in Safari
+  2. Tap the Share button (square with an arrow pointing up) in the toolbar
+  3. Scroll down, tap "Add to Home Screen"
+  4. Tap "Add" top right
+
+ANDROID — Chrome.
+  1. Open the Vercel URL in Chrome
+  2. Either wait for a banner offering to install, or tap the three-dot menu
+     top right and tap "Install app" (older Chrome may say "Add to Home
+     screen")
+  3. Confirm
+
+Ask: "Do you have an Open Brain icon on your home screen now?
+1 — Yes
+2 — No — I'll describe my phone and browser"
+
+If nothing ever offers to install, it is almost always the wrong browser.
+iPhone means Safari, Android means Chrome — Firefox, and in-app browsers like
+the one inside Instagram, will never offer it, and will not say why.
+
+Have them open it from the home screen icon, not the browser. Ask: "Does it
+open full screen — no address bar, no browser buttons, like a real app?
+1 — Yes
+2 — Still looks like a browser tab"
+
+If 2: it saved as a bookmark, not an install. Send them back to redo it —
+Safari's Share menu option must say "Add to Home Screen" specifically, not
+"Add to Reading List" or "Add Bookmark." Chrome's menu must say "Install app,"
+not just open the page.
+
+They will be asked to log in again once it is installed — the browser tab and
+the installed app do not share a login. That is expected, not a failure.
+
+One gap worth being straight about: voice capture works everywhere except the
+installed app on iPhone. Apple currently blocks microphone-to-text for
+anything running standalone from an iPhone home screen — it works fine in the
+Safari tab itself, just not once it is an icon. Everything else — typing,
+YouTube, PDF, URL, search — works the same installed or not. Android has no
+such limit; voice works installed or not.
+
+The app itself now knows this and says so: an iPhone user who opens the Voice
+tab in the installed app sees this explained right there, with the mic button
+disabled rather than silently doing nothing. So do not be surprised if they
+mention seeing a message about it — that is the app working correctly, not a
+bug you need to chase down.
+
+For the actual voice path on iPhone, point them at Telegram (Session 2b) —
+send the bot a voice note and it transcribes and saves it, same as speaking
+into the app would. It is optional and about 20-30 minutes, but for an iPhone
+owner it is not really optional if voice matters to them; say that plainly.
+Safari also still works for voice if they would rather stay in the browser tab
+and skip Telegram.
+
 === STEP 11 — SAVE THEIR WORK BACK TO GITHUB ===
 
 Before pushing, verify nothing secret is about to be committed:
@@ -461,8 +526,7 @@ Tell them, in plain language:
 - The figure in the corner of the app is what the AI has actually cost them
   this month. Point it out — it is the honest answer to "what will this cost",
   and it means they never have to take anyone's word for it
-- They can install it on their phone: open the URL in the phone browser and
-  choose "Add to Home Screen"
+- It is already on their phone, from Step 10b
 - Everything they save gets tagged and connected automatically
 - Nobody else can read it — it is protected by their login
 - Session 3 connects it to Claude Desktop
