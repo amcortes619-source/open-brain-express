@@ -1,0 +1,144 @@
+name: Keep the brain awake
+
+# Supabase pauses a free project after ~7 days of low activity. This runs a real
+# database query every morning so that never happens.
+#
+# It uses the built-in GITHUB_TOKEN, which GitHub mints fresh for every run and
+# which never expires. No personal access token is involved anywhere here.
+
+on:
+  schedule:
+    - cron: "17 13 * * *"   # 08:17 Bogota, every day
+  workflow_dispatch:         # and a "Run workflow" button, any time
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Query the database
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+            echo "::error::Missing repo secrets SUPABASE_URL and/or SUPABASE_ANON_KEY."
+            exit 1
+          fi
+
+          # A real read against a real table. Row Level Security means the anon
+          # key gets an empty list back, which is exactly what we want: the
+          # query reaches Postgres, and no data leaves the project.
+          code=$(curl -sS --max-time 30 -o /tmp/body.txt -w '%{http_code}' \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            "${SUPABASE_URL}/rest/v1/thoughts?select=id&limit=1") || code=000
+
+          echo "HTTP ${code}"
+          head -c 300 /tmp/body.txt || true
+          echo
+
+          if [ "${code}" = "000" ]; then
+            echo "::error::No answer from Supabase at all. The project is probably paused, or the URL is wrong."
+            exit 1
+          fi
+
+          if [ "${code}" -ge 400 ]; then
+            echo "::error::Supabase answered ${code}. Likely causes: the project is paused, or the anon key was rotated and the repo secret is stale."
+            exit 1
+          fi
+
+          echo "Database answered. Project is awake."
+
+      - name: Keep this workflow itself from being switched off
+        run: |
+          set -euo pipefail
+
+          # GitHub disables scheduled workflows in a repository that has had no
+          # activity for 60 days. A keepalive that switches itself off is not a
+          # keepalive, so we push a dated heartbeat whenever the last one is
+          # more than 20 days old. That is roughly 18 tiny commits a year and
+          # keeps the schedule comfortably inside the window.
+          beat=".github/keepalive-heartbeat.txt"
+          now=$(date -u +%s)
+
+          if [ -f "$beat" ]; then
+            last=$(sed -n 's/^epoch: //p' "$beat" | head -1)
+          else
+            last=""
+          fi
+
+          if [ -n "$last" ] && [ $(( now - last )) -lt $(( 20 * 86400 )) ]; then
+            echo "Heartbeat is recent enough. Nothing to commit."
+            exit 0
+          fi
+
+          {
+            echo "last-ping: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "epoch: ${now}"
+            echo
+            echo "Written by .github/workflows/keepalive.yml so that GitHub does not"
+            echo "disable this repository's scheduled workflows for inactivity."
+          } > "$beat"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$beat"
+          git commit -m "chore: keepalive heartbeat"
+          git push
+
+  token-expiry:
+    runs-on: ubuntu-latest
+    # Optional. Only does anything once you add a GH_PAT secret. Warns you two
+    # weeks before your fine-grained personal access token expires, instead of
+    # you finding out when a push fails.
+    steps:
+      - name: Check how long the personal access token has left
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_PAT:-}" ]; then
+            echo "No GH_PAT secret set. Skipping the expiry check."
+            exit 0
+          fi
+
+          exp=$(curl -sS --max-time 30 -D - -o /dev/null \
+            -H "Authorization: Bearer ${GH_PAT}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/rate_limit \
+            | tr -d '\r' \
+            | sed -n 's/^[Gg][Ii][Tt][Hh][Uu][Bb]-[Aa]uthentication-token-expiration: //p' \
+            | head -1)
+
+          if [ -z "${exp}" ]; then
+            echo "::warning::GitHub did not report an expiry date for this token. It may be invalid, or set to never expire."
+            exit 0
+          fi
+
+          echo "Token expires: ${exp}"
+          left=$(( ( $(date -u -d "${exp}" +%s) - $(date -u +%s) ) / 86400 ))
+          echo "Days remaining: ${left}"
+
+          if [ "${left}" -le 0 ]; then
+            echo "::error::Your fine-grained personal access token has expired. Regenerate it, then update the GH_PAT secret."
+            exit 1
+          fi
+
+          if [ "${left}" -le 14 ]; then
+            echo "::error::Your fine-grained personal access token expires in ${left} days (${exp}). Regenerate it now and update the GH_PAT secret."
+            exit 1
+          fi
+
+          echo "Plenty of time left."
